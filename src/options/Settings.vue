@@ -7,8 +7,9 @@
           <span>{{ M.duration }}</span>
           <input
             type="number"
-            min="1"
+            min="0.001"
             max="999"
+            step="any"
             class="duration"
             v-model.number="settings.focus.duration"
             v-focus>
@@ -79,8 +80,9 @@
           <span>{{ M.duration }}</span>
           <input
             type="number"
-            min="1"
+            min="0.001"
             max="999"
+            step="any"
             class="duration"
             v-model.number="settings.shortBreak.duration">
           <span>{{ M.minutes }}</span>
@@ -133,8 +135,9 @@
             <span>{{ M.duration }}</span>
             <input
               type="number"
-              min="1"
+              min="0.001"
               max="999"
+              step="any"
               class="duration"
               v-model.number="settings.longBreak.duration">
             <span>{{ M.minutes }}</span>
@@ -173,6 +176,42 @@
         </label>
       </p>
     </div>
+    <div class="section api-sync">
+      <h2>API Sync</h2>
+      <p>Sync completed pomodoros to your daily-progress API.</p>
+      <p class="field">
+        <label>
+          <span>API Endpoint</span>
+          <input
+            type="url"
+            v-model="apiEndpoint"
+            placeholder="https://your-api.vercel.app/api/pomodoro"
+            class="api-input">
+        </label>
+      </p>
+      <p class="field">
+        <label>
+          <span>API Key</span>
+          <input
+            type="password"
+            v-model="apiKey"
+            placeholder="Your API key"
+            class="api-input">
+        </label>
+      </p>
+      <p class="field" v-if="apiEndpoint && apiKey">
+        <button type="button" @click="testApiConnection" :disabled="testingApi">
+          {{ testingApi ? 'Testing...' : 'Test Connection' }}
+        </button>
+        <span v-if="apiTestResult" :class="{ 'api-success': apiTestSuccess, 'api-error': !apiTestSuccess }">
+          {{ apiTestResult }}
+        </span>
+      </p>
+      <p class="field" v-if="syncQueueCount > 0">
+        <span class="sync-status">{{ syncQueueCount }} pomodoro(s) pending sync</span>
+        <button type="button" @click="retrySyncQueue">Retry Sync</button>
+      </p>
+    </div>
     <transition name="slide-up">
       <div v-if="showSettingsSaved" @click="dismissSettingsSaved" class="save">
         <p>
@@ -200,6 +239,37 @@ input[type="number"] {
 }
 .section.autostart {
   display: none;
+}
+.section.api-sync {
+  .api-input {
+    width: 300px;
+    padding: 6px 10px;
+    font-size: 14px;
+  }
+  button {
+    padding: 8px 16px;
+    cursor: pointer;
+    background: #4a90d9;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    &:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+  }
+  .api-success {
+    color: #080;
+    margin-left: 10px;
+  }
+  .api-error {
+    color: #a00;
+    margin-left: 10px;
+  }
+  .sync-status {
+    color: #666;
+    margin-right: 10px;
+  }
 }
 .save {
   position: fixed;
@@ -263,7 +333,14 @@ export default {
       notificationSounds: null,
       timerSounds: null,
       timerSound: null,
-      timerSoundMutex: new Mutex()
+      timerSoundMutex: new Mutex(),
+      // API Sync settings
+      apiEndpoint: '',
+      apiKey: '',
+      testingApi: false,
+      apiTestResult: '',
+      apiTestSuccess: false,
+      syncQueueCount: 0
     };
   },
   async mounted() {
@@ -272,6 +349,13 @@ export default {
       this.soundsClient.getNotificationSounds(),
       this.soundsClient.getTimerSounds()
     ]);
+
+    // Load API settings from local storage
+    chrome.storage.local.get(['apiEndpoint', 'apiKey', 'syncQueue'], (result) => {
+      this.apiEndpoint = result.apiEndpoint || '';
+      this.apiKey = result.apiKey || '';
+      this.syncQueueCount = (result.syncQueue || []).length;
+    });
   },
   beforeDestroy() {
     this.settingsClient.dispose();
@@ -308,6 +392,51 @@ export default {
     dismissSettingsSaved() {
       this.showSettingsSaved = false;
       clearTimeout(this.showSettingsSavedTimeout);
+    },
+    saveApiSettings() {
+      chrome.storage.local.set({
+        apiEndpoint: this.apiEndpoint,
+        apiKey: this.apiKey
+      });
+    },
+    async testApiConnection() {
+      this.testingApi = true;
+      this.apiTestResult = '';
+
+      try {
+        // Test with a GET request to check authentication
+        const response = await fetch(this.apiEndpoint + '?date=' + new Date().toISOString().split('T')[0], {
+          method: 'GET',
+          headers: {
+            'x-api-key': this.apiKey
+          }
+        });
+
+        if (response.ok) {
+          this.apiTestSuccess = true;
+          this.apiTestResult = 'Connection successful!';
+        } else if (response.status === 401) {
+          this.apiTestSuccess = false;
+          this.apiTestResult = 'Invalid API key';
+        } else {
+          this.apiTestSuccess = false;
+          this.apiTestResult = 'Error: ' + response.status;
+        }
+      } catch (e) {
+        this.apiTestSuccess = false;
+        this.apiTestResult = 'Network error';
+      }
+
+      this.testingApi = false;
+    },
+    async retrySyncQueue() {
+      // Trigger background script to retry sync
+      chrome.runtime.sendMessage({ action: 'retrySyncQueue' }, (response) => {
+        // Refresh queue count after retry
+        chrome.storage.local.get(['syncQueue'], (result) => {
+          this.syncQueueCount = (result.syncQueue || []).length;
+        });
+      });
     }
   },
   computed: {
@@ -369,6 +498,14 @@ export default {
         this.saveSettings();
       },
       deep: true
+    },
+    apiEndpoint() {
+      this.saveApiSettings();
+      this.apiTestResult = ''; // Clear test result when endpoint changes
+    },
+    apiKey() {
+      this.saveApiSettings();
+      this.apiTestResult = ''; // Clear test result when key changes
     }
   },
   directives: {

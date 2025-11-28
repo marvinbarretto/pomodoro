@@ -33,7 +33,9 @@ class StorageManager extends EventEmitter
     }
 
     if (!payload.version) {
-      throw new Error('Missing version.');
+      console.warn('StorageManager: Missing version in stored settings. Resetting to defaults.', payload);
+      modified = true;
+      payload = this.schema.default;
     }
 
     if (payload.version < this.schema.version) {

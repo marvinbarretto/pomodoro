@@ -231,6 +231,192 @@ class HistoryObserver
   }
 }
 
+class ApiSyncObserver
+{
+  constructor() {
+    this.startedAt = null;
+    this.syncQueue = [];
+    this.isSyncing = false;
+    this.pendingPomodoro = null; // Store pending pomodoro until task is entered
+  }
+
+  onStart({ phase }) {
+    if (phase === Phase.Focus) {
+      this.startedAt = new Date().toISOString();
+    }
+  }
+
+  async onExpire({ phase, duration }) {
+    if (phase !== Phase.Focus) {
+      return;
+    }
+
+    // Store pending pomodoro data - don't sync yet, wait for task input
+    const endedAt = new Date().toISOString();
+    this.pendingPomodoro = {
+      started_at: this.startedAt || new Date(Date.now() - duration * 1000).toISOString(),
+      ended_at: endedAt,
+      duration_seconds: duration
+    };
+
+    console.log('Focus session completed. Waiting for task input before syncing.');
+  }
+
+  async completePomodoroWithTask(taskText) {
+    if (!this.pendingPomodoro) {
+      console.warn('No pending pomodoro to complete');
+      return;
+    }
+
+    const { savedTags } = await this.getTaskAndTags();
+
+    // Extract tags from text
+    const extractedTags = [];
+    if (taskText) {
+      const hashtagMatches = taskText.match(/#(\w+)/g);
+      if (hashtagMatches) {
+        hashtagMatches.forEach(tag => {
+          const tagName = tag.slice(1); // Remove #
+          if (!extractedTags.includes(tagName)) {
+            extractedTags.push(tagName);
+          }
+        });
+      }
+    }
+
+    // Create complete pomodoro object with task
+    const pomodoro = {
+      ...this.pendingPomodoro,
+      text: taskText || null,
+      tags: extractedTags
+    };
+
+    // Add to queue and attempt sync
+    this.syncQueue.push(pomodoro);
+    await this.saveQueue();
+    await this.processQueue();
+
+    // Save any new tags to savedTags for autocomplete
+    if (extractedTags.length > 0) {
+      await this.saveNewTags(extractedTags, savedTags);
+    }
+
+    // Clear pending pomodoro
+    this.pendingPomodoro = null;
+
+    console.log('Pomodoro completed with task and queued for sync:', pomodoro);
+  }
+
+  async getTaskAndTags() {
+    return new Promise((resolve) => {
+      chrome.storage.local.get(['currentTask', 'savedTags'], (result) => {
+        resolve({
+          currentTask: result.currentTask || '',
+          savedTags: result.savedTags || []
+        });
+      });
+    });
+  }
+
+  async saveNewTags(extractedTags, existingSavedTags) {
+    const newTags = extractedTags.filter(tag => !existingSavedTags.includes(tag));
+    if (newTags.length > 0) {
+      const updatedTags = [...existingSavedTags, ...newTags];
+      await new Promise((resolve) => {
+        chrome.storage.local.set({ savedTags: updatedTags }, resolve);
+      });
+    }
+  }
+
+  async saveQueue() {
+    try {
+      await new Promise((resolve, reject) => {
+        chrome.storage.local.set({ syncQueue: this.syncQueue }, () => {
+          if (chrome.runtime.lastError) {
+            reject(chrome.runtime.lastError);
+          } else {
+            resolve();
+          }
+        });
+      });
+    } catch (e) {
+      console.error('Failed to save sync queue:', e);
+    }
+  }
+
+  async loadQueue() {
+    try {
+      const result = await new Promise((resolve) => {
+        chrome.storage.local.get(['syncQueue'], resolve);
+      });
+      this.syncQueue = result.syncQueue || [];
+    } catch (e) {
+      console.error('Failed to load sync queue:', e);
+      this.syncQueue = [];
+    }
+  }
+
+  async getApiSettings() {
+    return new Promise((resolve) => {
+      chrome.storage.local.get(['apiEndpoint', 'apiKey'], (result) => {
+        resolve({
+          endpoint: result.apiEndpoint || '',
+          key: result.apiKey || ''
+        });
+      });
+    });
+  }
+
+  async processQueue() {
+    if (this.isSyncing || this.syncQueue.length === 0) {
+      return;
+    }
+
+    const { endpoint, key } = await this.getApiSettings();
+    if (!endpoint || !key) {
+      console.log('API not configured, pomodoro queued for later sync');
+      return;
+    }
+
+    this.isSyncing = true;
+
+    while (this.syncQueue.length > 0) {
+      const pomodoro = this.syncQueue[0];
+
+      try {
+        const response = await fetch(endpoint, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-api-key': key
+          },
+          body: JSON.stringify(pomodoro)
+        });
+
+        if (response.ok) {
+          this.syncQueue.shift(); // Remove from queue on success
+          await this.saveQueue();
+          console.log('Pomodoro synced successfully');
+        } else {
+          console.error('API error:', response.status);
+          break; // Stop processing on error, retry later
+        }
+      } catch (e) {
+        console.error('Network error syncing pomodoro:', e);
+        break; // Stop processing, retry later
+      }
+    }
+
+    this.isSyncing = false;
+  }
+
+  async initialize() {
+    await this.loadQueue();
+    // Try to sync any queued pomodoros on startup
+    await this.processQueue();
+  }
+}
+
 class CountdownObserver
 {
   constructor(settings) {
@@ -342,6 +528,7 @@ export {
   ExpirationSoundObserver,
   NotificationObserver,
   HistoryObserver,
+  ApiSyncObserver,
   CountdownObserver,
   MenuObserver,
   TraceObserver

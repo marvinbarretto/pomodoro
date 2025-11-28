@@ -3,7 +3,7 @@
   "short_name": "__MSG_app_name_short__",
   "description": "__MSG_app_desc__",
   "default_locale": "en",
-  "version": "34",
+  "version": "1.0.0",
   "manifest_version": 2,
   "author": "Chris Schmich <schmch@gmail.com>",
   "homepage_url": "https://github.com/schmich/marinara",
@@ -12,7 +12,8 @@
     "alarms",
     "contextMenus",
     "storage",
-    "notifications"
+    "notifications",
+    "https://*.vercel.app/*"
   ],
   "browser_action": {
     "default_title": "Marinara",
