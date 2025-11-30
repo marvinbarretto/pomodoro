@@ -9,6 +9,34 @@
         <h3>{{ M.what_did_you_work_on || 'What did you work on?' }}</h3>
       </div>
 
+      <!-- Recent pomodoros section -->
+      <div v-if="recentPomodoros.length > 0" class="recent-pomodoros">
+        <div class="section-label">Recent Sessions:</div>
+        <div class="pomodoro-list">
+          <div
+            v-for="(pomo, index) in recentPomodoros"
+            :key="index"
+            class="pomodoro-item"
+          >
+            <div class="pomodoro-time">
+              {{ formatDateTime(pomo.ended_at) }} ({{ formatDuration(pomo.duration_seconds) }})
+            </div>
+            <div v-if="pomo.text" class="pomodoro-text">{{ pomo.text }}</div>
+            <div v-if="pomo.tags && pomo.tags.length > 0" class="pomodoro-tags">
+              <span v-for="tag in pomo.tags" :key="tag" class="tag-badge">#{{ tag }}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- All tags section -->
+      <div v-if="getAllTags().length > 0" class="all-tags-section">
+        <div class="section-label">All Tags from Recent Sessions:</div>
+        <div class="all-tags-list">
+          <span v-for="tag in getAllTags()" :key="tag" class="tag-chip">#{{ tag }}</span>
+        </div>
+      </div>
+
       <div class="task-input-wrapper">
         <textarea
           v-model="currentTask"
@@ -118,6 +146,91 @@ body {
       font-weight: 600;
       color: #333;
       margin: 0;
+    }
+  }
+
+  .section-label {
+    font-size: 14px;
+    font-weight: 600;
+    color: #555;
+    margin-bottom: 12px;
+    text-align: left;
+  }
+
+  .recent-pomodoros {
+    margin-bottom: 25px;
+    background: #f8f9fa;
+    border-radius: 8px;
+    padding: 15px;
+    max-height: 300px;
+    overflow-y: auto;
+
+    .pomodoro-list {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .pomodoro-item {
+      background: #fff;
+      border: 1px solid #e0e0e0;
+      border-radius: 6px;
+      padding: 12px;
+      text-align: left;
+
+      .pomodoro-time {
+        font-size: 12px;
+        color: #888;
+        margin-bottom: 6px;
+      }
+
+      .pomodoro-text {
+        font-size: 14px;
+        color: #333;
+        margin-bottom: 8px;
+        word-wrap: break-word;
+      }
+
+      .pomodoro-tags {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+
+        .tag-badge {
+          display: inline-block;
+          padding: 3px 10px;
+          font-size: 12px;
+          background: #e3f2fd;
+          color: #0277bd;
+          border-radius: 12px;
+          font-weight: 500;
+        }
+      }
+    }
+  }
+
+  .all-tags-section {
+    margin-bottom: 25px;
+    background: #fff9e6;
+    border-radius: 8px;
+    padding: 15px;
+
+    .all-tags-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      justify-content: flex-start;
+
+      .tag-chip {
+        display: inline-block;
+        padding: 6px 14px;
+        font-size: 13px;
+        background: #fff;
+        color: #f57c00;
+        border: 1.5px solid #f57c00;
+        border-radius: 16px;
+        font-weight: 500;
+      }
     }
   }
 
@@ -323,8 +436,14 @@ export default {
       pomodoroCount: 0,
       currentTask: '',
       savedTags: [],
+      recentPomodoros: [],
       isFocusSession: false
     };
+  },
+  computed: {
+    M() {
+      return M;
+    }
   },
   async created() {
     document.title = `${M.expire_title} - ${M.app_name_short}`;
@@ -366,10 +485,15 @@ export default {
   methods: {
     async loadTaskAndTags() {
       return new Promise((resolve) => {
-        chrome.storage.local.get(['currentTask', 'savedTags'], (result) => {
+        chrome.storage.local.get(['currentTask', 'savedTags', 'syncQueue'], (result) => {
           this.currentTask = result.currentTask || '';
           this.savedTags = result.savedTags || [];
-          console.log('[Expire] Loaded from storage:', { currentTask: this.currentTask, savedTags: this.savedTags });
+          this.recentPomodoros = result.syncQueue || [];
+          console.log('[Expire] Loaded from storage:', {
+            currentTask: this.currentTask,
+            savedTags: this.savedTags,
+            recentPomodoros: this.recentPomodoros
+          });
           resolve();
         });
       });
@@ -463,6 +587,34 @@ export default {
       if (e.key === 'Enter' && (!this.isFocusSession || e.ctrlKey)) {
         this.saveAndStartSession();
       }
+    },
+
+    formatDateTime(isoString) {
+      if (!isoString) return '';
+      const date = new Date(isoString);
+      return date.toLocaleString('en-US', {
+        month: 'short',
+        day: 'numeric',
+        hour: 'numeric',
+        minute: '2-digit'
+      });
+    },
+
+    formatDuration(seconds) {
+      if (!seconds) return '';
+      const minutes = Math.floor(seconds / 60);
+      return `${minutes}m`;
+    },
+
+    getAllTags() {
+      // Get all unique tags from recent pomodoros
+      const tagSet = new Set();
+      this.recentPomodoros.forEach(pomo => {
+        if (pomo.tags && Array.isArray(pomo.tags)) {
+          pomo.tags.forEach(tag => tagSet.add(tag));
+        }
+      });
+      return Array.from(tagSet).sort();
     }
   }
 };

@@ -12,6 +12,24 @@
         @restart="onRestart">
       </Timer>
     </div>
+    <div class="task-input-container" v-if="phase === Phase.Focus">
+      <input
+        type="text"
+        v-model="currentTask"
+        @input="saveCurrentTask"
+        placeholder="What are you working on? #tags"
+        class="task-input"
+        ref="taskInput">
+      <div class="tag-suggestions" v-if="showSuggestions && filteredTags.length">
+        <div
+          v-for="tag in filteredTags"
+          :key="tag"
+          @click="selectTag(tag)"
+          class="tag-suggestion">
+          #{{ tag }}
+        </div>
+      </div>
+    </div>
     <button @click="showSettings" class="settings nav" :title="M.settings">
       <Sprite src="/images/settings.svg"></Sprite>
       <span>{{ M.settings }}</span>
@@ -103,6 +121,52 @@ button.nav {
     margin-left: 10px;
   }
 }
+.task-input-container {
+  position: absolute;
+  top: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 90%;
+  max-width: 500px;
+  z-index: 100;
+}
+.task-input {
+  width: 100%;
+  padding: 12px 16px;
+  font-size: 16px;
+  border: 2px solid #ddd;
+  border-radius: 8px;
+  outline: none;
+  box-sizing: border-box;
+  background: rgba(255, 255, 255, 0.95);
+  &:focus {
+    border-color: #4a90d9;
+  }
+  &::placeholder {
+    color: #999;
+  }
+}
+.tag-suggestions {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  background: white;
+  border: 1px solid #ddd;
+  border-top: none;
+  border-radius: 0 0 8px 8px;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+  max-height: 200px;
+  overflow-y: auto;
+}
+.tag-suggestion {
+  padding: 10px 16px;
+  cursor: pointer;
+  color: #4a90d9;
+  &:hover {
+    background: #f5f5f5;
+  }
+}
 </style>
 
 <script>
@@ -116,14 +180,55 @@ import M from '../Messages';
 
 export default {
   mixins: [TimerStats],
+  data() {
+    return {
+      currentTask: '',
+      savedTags: [],
+      showSuggestions: false,
+      Phase: Phase
+    };
+  },
   created() {
     document.title = `${M.countdown} - ${M.app_name_short}`;
     document.addEventListener('keydown', this.onKeyDown);
+    this.loadCurrentTask();
+    this.loadSavedTags();
   },
   beforeDestroy() {
     document.removeEventListener('keydown', this.onKeyDown);
   },
   methods: {
+    loadCurrentTask() {
+      chrome.storage.local.get(['currentTask'], (result) => {
+        this.currentTask = result.currentTask || '';
+      });
+    },
+    loadSavedTags() {
+      chrome.storage.local.get(['savedTags'], (result) => {
+        this.savedTags = result.savedTags || [];
+      });
+    },
+    saveCurrentTask() {
+      chrome.storage.local.set({ currentTask: this.currentTask });
+      // Check if we should show tag suggestions
+      this.checkForTagTrigger();
+    },
+    checkForTagTrigger() {
+      const cursorPos = this.$refs.taskInput?.selectionStart || 0;
+      const textBeforeCursor = this.currentTask.slice(0, cursorPos);
+      const hashMatch = textBeforeCursor.match(/#(\w*)$/);
+      this.showSuggestions = !!hashMatch;
+    },
+    selectTag(tag) {
+      const cursorPos = this.$refs.taskInput?.selectionStart || this.currentTask.length;
+      const textBeforeCursor = this.currentTask.slice(0, cursorPos);
+      const textAfterCursor = this.currentTask.slice(cursorPos);
+      const newTextBefore = textBeforeCursor.replace(/#(\w*)$/, `#${tag} `);
+      this.currentTask = newTextBefore + textAfterCursor;
+      this.showSuggestions = false;
+      this.saveCurrentTask();
+      this.$refs.taskInput?.focus();
+    },
     showSettings() {
       OptionsClient.once.showPage('settings');
     },
@@ -152,6 +257,17 @@ export default {
     }
   },
   computed: {
+    filteredTags() {
+      if (!this.showSuggestions) return [];
+      const cursorPos = this.$refs.taskInput?.selectionStart || 0;
+      const textBeforeCursor = this.currentTask.slice(0, cursorPos);
+      const hashMatch = textBeforeCursor.match(/#(\w*)$/);
+      if (!hashMatch) return [];
+      const partial = hashMatch[1].toLowerCase();
+      return this.savedTags.filter(tag =>
+        tag.toLowerCase().startsWith(partial) && tag.toLowerCase() !== partial
+      ).slice(0, 5);
+    },
     timerClass() {
       return {
         null: '',
