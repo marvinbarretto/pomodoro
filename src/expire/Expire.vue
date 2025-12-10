@@ -9,31 +9,36 @@
         <h3>{{ M.what_did_you_work_on || 'What did you work on?' }}</h3>
       </div>
 
-      <!-- Recent pomodoros section -->
-      <div v-if="recentPomodoros.length > 0" class="recent-pomodoros">
-        <div class="section-label">Recent Sessions:</div>
-        <div class="pomodoro-list">
-          <div
-            v-for="(pomo, index) in recentPomodoros"
-            :key="index"
-            class="pomodoro-item"
-          >
-            <div class="pomodoro-time">
-              {{ formatDateTime(pomo.ended_at) }} ({{ formatDuration(pomo.duration_seconds) }})
-            </div>
-            <div v-if="pomo.text" class="pomodoro-text">{{ pomo.text }}</div>
-            <div v-if="pomo.tags && pomo.tags.length > 0" class="pomodoro-tags">
-              <span v-for="tag in pomo.tags" :key="tag" class="tag-badge">#{{ tag }}</span>
-            </div>
+      <!-- Tag usage chart -->
+      <div v-if="tagStats.length > 0" class="tag-stats">
+        <div class="stats-header">
+          <div class="stats-label">{{ timeframeLabel }}:</div>
+          <div class="timeframe-toggles">
+            <button
+              @click="selectedTimeframe = 'today'"
+              :class="{ active: selectedTimeframe === 'today' }"
+              class="timeframe-btn"
+            >Today</button>
+            <button
+              @click="selectedTimeframe = 'week'"
+              :class="{ active: selectedTimeframe === 'week' }"
+              class="timeframe-btn"
+            >Week</button>
+            <button
+              @click="selectedTimeframe = 'month'"
+              :class="{ active: selectedTimeframe === 'month' }"
+              class="timeframe-btn"
+            >Month</button>
           </div>
         </div>
-      </div>
-
-      <!-- All tags section -->
-      <div v-if="getAllTags().length > 0" class="all-tags-section">
-        <div class="section-label">All Tags from Recent Sessions:</div>
-        <div class="all-tags-list">
-          <span v-for="tag in getAllTags()" :key="tag" class="tag-chip">#{{ tag }}</span>
+        <div class="stats-bars">
+          <div v-for="stat in tagStats" :key="stat.tag" class="stat-row">
+            <div class="stat-tag">#{{ stat.tag }}</div>
+            <div class="stat-bar-container">
+              <div class="stat-bar" :style="{ width: stat.percentage + '%' }"></div>
+            </div>
+            <div class="stat-count">{{ stat.count }}</div>
+          </div>
         </div>
       </div>
 
@@ -134,12 +139,12 @@ body {
 
 // Task Section
 .task-section {
-  margin: 30px auto;
+  margin: 20px auto;
   width: 600px;
   max-width: 90%;
 
   .task-header {
-    margin-bottom: 20px;
+    margin-bottom: 15px;
 
     h3 {
       font-size: 20px;
@@ -149,88 +154,96 @@ body {
     }
   }
 
-  .section-label {
-    font-size: 14px;
-    font-weight: 600;
-    color: #555;
-    margin-bottom: 12px;
-    text-align: left;
-  }
+  .tag-stats {
+    margin-bottom: 20px;
+    background: #f5f5f5;
+    border-radius: 6px;
+    padding: 12px 15px;
 
-  .recent-pomodoros {
-    margin-bottom: 25px;
-    background: #f8f9fa;
-    border-radius: 8px;
-    padding: 15px;
-    max-height: 300px;
-    overflow-y: auto;
+    .stats-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 10px;
+    }
 
-    .pomodoro-list {
+    .stats-label {
+      font-size: 13px;
+      font-weight: 600;
+      color: #666;
+      text-align: left;
+    }
+
+    .timeframe-toggles {
+      display: flex;
+      gap: 6px;
+    }
+
+    .timeframe-btn {
+      padding: 4px 12px;
+      font-size: 12px;
+      border: 1px solid #ccc;
+      background: #fff;
+      color: #666;
+      border-radius: 12px;
+      cursor: pointer;
+      transition: all 0.2s;
+      outline: none;
+      font-family: 'Source Sans Pro', sans-serif;
+      font-weight: 500;
+
+      &:hover {
+        border-color: #0ae;
+        color: #0ae;
+      }
+
+      &.active {
+        background: #0ae;
+        color: #fff;
+        border-color: #0ae;
+      }
+    }
+
+    .stats-bars {
       display: flex;
       flex-direction: column;
-      gap: 12px;
-    }
-
-    .pomodoro-item {
-      background: #fff;
-      border: 1px solid #e0e0e0;
-      border-radius: 6px;
-      padding: 12px;
-      text-align: left;
-
-      .pomodoro-time {
-        font-size: 12px;
-        color: #888;
-        margin-bottom: 6px;
-      }
-
-      .pomodoro-text {
-        font-size: 14px;
-        color: #333;
-        margin-bottom: 8px;
-        word-wrap: break-word;
-      }
-
-      .pomodoro-tags {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 6px;
-
-        .tag-badge {
-          display: inline-block;
-          padding: 3px 10px;
-          font-size: 12px;
-          background: #e3f2fd;
-          color: #0277bd;
-          border-radius: 12px;
-          font-weight: 500;
-        }
-      }
-    }
-  }
-
-  .all-tags-section {
-    margin-bottom: 25px;
-    background: #fff9e6;
-    border-radius: 8px;
-    padding: 15px;
-
-    .all-tags-list {
-      display: flex;
-      flex-wrap: wrap;
       gap: 8px;
-      justify-content: flex-start;
+    }
 
-      .tag-chip {
-        display: inline-block;
-        padding: 6px 14px;
-        font-size: 13px;
-        background: #fff;
-        color: #f57c00;
-        border: 1.5px solid #f57c00;
-        border-radius: 16px;
-        font-weight: 500;
-      }
+    .stat-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 13px;
+    }
+
+    .stat-tag {
+      min-width: 80px;
+      text-align: left;
+      font-weight: 500;
+      color: #0ae;
+    }
+
+    .stat-bar-container {
+      flex: 1;
+      background: #e0e0e0;
+      border-radius: 10px;
+      height: 18px;
+      overflow: hidden;
+    }
+
+    .stat-bar {
+      height: 100%;
+      background: linear-gradient(90deg, #0ae 0%, #0ae 100%);
+      border-radius: 10px;
+      transition: width 0.3s ease;
+    }
+
+    .stat-count {
+      min-width: 25px;
+      text-align: right;
+      font-weight: 600;
+      color: #555;
     }
   }
 
@@ -317,22 +330,26 @@ body {
     gap: 15px;
     justify-content: center;
     align-items: center;
-    margin-top: 25px;
+    margin-top: 30px;
+    padding-top: 20px;
+    border-top: 1px solid #e0e0e0;
 
     .skip-button {
       background: #fff;
       color: #666;
       border: 2px solid #ddd;
-      font-size: 16px;
-      padding: 12px 30px;
+      font-size: 17px;
+      padding: 14px 35px;
       border-radius: 50px;
       cursor: pointer;
       transition: all 0.2s;
       outline: none;
+      font-weight: 500;
 
       &:hover {
-        border-color: #bbb;
-        color: #444;
+        border-color: #999;
+        color: #333;
+        transform: translateY(-1px);
       }
     }
   }
@@ -340,7 +357,8 @@ body {
 
 .button {
   margin: 0;
-  font-size: 20px;
+  font-size: 21px;
+  font-weight: 600;
   -webkit-user-select: none;
   -webkit-tap-highlight-color: rgba(0,0,0,0);
   -webkit-touch-callout: none;
@@ -351,14 +369,14 @@ body {
   cursor: pointer;
   border: 0;
   border-radius: 50px;
-  padding: 15px 45px;
+  padding: 16px 50px;
   text-align: center;
   text-decoration: none !important;
   background: rgba(0,174,255,1);
   background: -webkit-gradient(left top, left bottom, color-stop(0%, rgba(0,174,255,1)), color-stop(92%, rgba(0,174,255,1)), color-stop(100%, rgba(0,144,234,1)));
   background: -webkit-linear-gradient(top, rgba(0,174,255,1) 0%, rgba(0,174,255,1) 92%, rgba(0,144,234,1) 100%);
   color: #fff;
-  transition: box-shadow 0.2s cubic-bezier(0.4, 0, 0.2, 1), background 0.1s linear;
+  transition: box-shadow 0.2s cubic-bezier(0.4, 0, 0.2, 1), background 0.1s linear, transform 0.2s;
   z-index: 1;
   position: relative;
   &.break, &.short-break, &.long-break {
@@ -367,6 +385,8 @@ body {
     color: #fff;
     &:hover {
       background: #0b0;
+      transform: translateY(-2px);
+      box-shadow: 0 18px 12px -10px #00aa0077;
     }
   }
   &.focus {
@@ -375,10 +395,13 @@ body {
     color: #fff;
     &:hover {
       background: #e00;
+      transform: translateY(-2px);
+      box-shadow: 0 18px 12px -10px #bb000077;
     }
   }
   &:active {
-    box-shadow: none;
+    transform: translateY(0);
+    box-shadow: 0 10px 6px -10px #00000055;
     transition-delay: 0s;
   }
   &::not(.focus):not(.break):not(.short-break):not(.long-break) {
@@ -389,8 +412,14 @@ body {
   margin-top: 10px;
 }
 .pomodoros-today {
-  margin-top: 60px;
+  margin-top: 50px;
+  padding-top: 30px;
+  border-top: 2px solid #f0f0f0;
   line-height: 100%;
+
+  p {
+    font-weight: 500;
+  }
 }
 .view-history {
   cursor: pointer;
@@ -437,12 +466,62 @@ export default {
       currentTask: '',
       savedTags: [],
       recentPomodoros: [],
-      isFocusSession: false
+      isFocusSession: false,
+      selectedTimeframe: 'week'
     };
   },
   computed: {
     M() {
       return M;
+    },
+    timeframeLabel() {
+      const labels = {
+        today: 'Tag usage (today)',
+        week: 'Tag usage (this week)',
+        month: 'Tag usage (this month)'
+      };
+      return labels[this.selectedTimeframe] || 'Tag usage';
+    },
+    tagStats() {
+      // Calculate tag frequency based on selected timeframe
+      const tagCounts = {};
+      const now = new Date();
+      let startDate;
+
+      // Determine start date based on timeframe
+      if (this.selectedTimeframe === 'today') {
+        startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0);
+      } else if (this.selectedTimeframe === 'week') {
+        startDate = new Date();
+        startDate.setDate(startDate.getDate() - 7);
+      } else if (this.selectedTimeframe === 'month') {
+        startDate = new Date();
+        startDate.setDate(startDate.getDate() - 30);
+      }
+
+      this.recentPomodoros.forEach(pomo => {
+        // Filter by selected timeframe
+        if (pomo.ended_at && new Date(pomo.ended_at) >= startDate) {
+          if (pomo.tags && Array.isArray(pomo.tags)) {
+            pomo.tags.forEach(tag => {
+              tagCounts[tag] = (tagCounts[tag] || 0) + 1;
+            });
+          }
+        }
+      });
+
+      // Convert to array and sort by count
+      const stats = Object.entries(tagCounts)
+        .map(([tag, count]) => ({ tag, count }))
+        .sort((a, b) => b.count - a.count)
+        .slice(0, 5); // Show top 5 tags
+
+      // Calculate percentages
+      const maxCount = stats.length > 0 ? stats[0].count : 1;
+      return stats.map(stat => ({
+        ...stat,
+        percentage: (stat.count / maxCount) * 100
+      }));
     }
   },
   async created() {
@@ -589,33 +668,6 @@ export default {
       }
     },
 
-    formatDateTime(isoString) {
-      if (!isoString) return '';
-      const date = new Date(isoString);
-      return date.toLocaleString('en-US', {
-        month: 'short',
-        day: 'numeric',
-        hour: 'numeric',
-        minute: '2-digit'
-      });
-    },
-
-    formatDuration(seconds) {
-      if (!seconds) return '';
-      const minutes = Math.floor(seconds / 60);
-      return `${minutes}m`;
-    },
-
-    getAllTags() {
-      // Get all unique tags from recent pomodoros
-      const tagSet = new Set();
-      this.recentPomodoros.forEach(pomo => {
-        if (pomo.tags && Array.isArray(pomo.tags)) {
-          pomo.tags.forEach(tag => tagSet.add(tag));
-        }
-      });
-      return Array.from(tagSet).sort();
-    }
   }
 };
 </script>
