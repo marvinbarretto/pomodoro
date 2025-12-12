@@ -467,7 +467,7 @@ export default {
       savedTags: [],
       recentPomodoros: [],
       isFocusSession: false,
-      selectedTimeframe: 'week'
+      selectedTimeframe: 'today'
     };
   },
   computed: {
