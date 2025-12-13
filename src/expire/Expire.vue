@@ -88,10 +88,49 @@
     </div>
 
     <div class="pomodoros-today">
-      <p class="pomodoros">
-        <i v-for="_ of new Array(pomodoroCount)" :key="_" class="icon-circle"></i>
-      </p>
-      <p>{{ M.completed_today }}</p>
+      <div class="stats-visual">
+        <p class="pomodoros">
+          <i v-for="_ of new Array(pomodoroCount)" :key="_" class="icon-circle"></i>
+        </p>
+      </div>
+
+      <div class="stats-summary">
+        <div class="stats-main">
+          <span class="stats-count">{{ currentStatsCount }}</span>
+          <span class="stats-label-inline">{{ statsLabel.toLowerCase() }}</span>
+        </div>
+
+        <div v-if="statsComparison.length > 0" class="stats-context">
+          <span
+            v-for="(comp, index) in statsComparison"
+            :key="index"
+            :class="['context-item', `trend-${comp.trend}`]"
+          >
+            <span v-if="comp.trend === 'up'" class="trend-icon">↑</span>
+            <span v-if="comp.trend === 'down'" class="trend-icon">↓</span>
+            {{ comp.text }}
+          </span>
+        </div>
+      </div>
+
+      <div class="stats-timeframe-toggles">
+        <button
+          @click="selectedStatsTimeframe = 'today'"
+          :class="{ active: selectedStatsTimeframe === 'today' }"
+          class="stats-timeframe-btn"
+        >Today</button>
+        <button
+          @click="selectedStatsTimeframe = 'week'"
+          :class="{ active: selectedStatsTimeframe === 'week' }"
+          class="stats-timeframe-btn"
+        >Week</button>
+        <button
+          @click="selectedStatsTimeframe = 'month'"
+          :class="{ active: selectedStatsTimeframe === 'month' }"
+          class="stats-timeframe-btn"
+        >Month</button>
+      </div>
+
       <button @click.prevent="showHistoryPage" class="view-history">{{ M.view_history }}</button>
     </div>
   </div>
@@ -420,7 +459,109 @@ body {
   p {
     font-weight: 500;
   }
+
+  .stats-visual {
+    margin-bottom: 20px;
+  }
+
+  .stats-summary {
+    margin-bottom: 20px;
+  }
+
+  .stats-main {
+    display: flex;
+    align-items: baseline;
+    justify-content: center;
+    gap: 10px;
+    margin-bottom: 12px;
+
+    .stats-count {
+      font-size: 42px;
+      font-weight: 700;
+      color: #d00;
+      line-height: 1;
+    }
+
+    .stats-label-inline {
+      font-size: 18px;
+      font-weight: 500;
+      color: #666;
+    }
+  }
+
+  .stats-context {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    font-size: 14px;
+
+    .context-item {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      color: #666;
+      font-weight: 500;
+
+      &.trend-up {
+        color: #0a0;
+
+        .trend-icon {
+          color: #0a0;
+          font-weight: 700;
+        }
+      }
+
+      &.trend-down {
+        color: #999;
+
+        .trend-icon {
+          color: #999;
+          font-weight: 700;
+        }
+      }
+
+      &.trend-neutral {
+        color: #666;
+      }
+    }
+  }
+
+  .stats-timeframe-toggles {
+    display: flex;
+    justify-content: center;
+    gap: 8px;
+    margin: 20px 0;
+
+    .stats-timeframe-btn {
+      padding: 8px 20px;
+      font-size: 14px;
+      font-weight: 500;
+      border: 2px solid #ddd;
+      background: #fff;
+      color: #666;
+      border-radius: 25px;
+      cursor: pointer;
+      transition: all 0.2s;
+      outline: none;
+      font-family: 'Source Sans Pro', sans-serif;
+
+      &:hover {
+        border-color: #d00;
+        color: #d00;
+        transform: translateY(-1px);
+      }
+
+      &.active {
+        background: #d00;
+        color: #fff;
+        border-color: #d00;
+        box-shadow: 0 2px 8px rgba(221, 0, 0, 0.3);
+      }
+    }
+  }
 }
+
 .view-history {
   cursor: pointer;
   font-size: 15px;
@@ -438,12 +579,14 @@ body {
     text-decoration: none;
   }
 }
+
 .pomodoros i {
   font-size: 35px;
   margin-top: 7px;
   color: #d00 !important;
   text-shadow: 0 2px 2px rgba(200, 0, 0, 0.3);
 }
+
 .pomodoros:empty ~ * {
   display: none;
 }
@@ -451,7 +594,7 @@ body {
 
 <script>
 import M from '../Messages';
-import { PomodoroClient, OptionsClient } from '../background/Services';
+import { PomodoroClient, OptionsClient, HistoryClient } from '../background/Services';
 import { ExpirationClient } from '../background/Expiration';
 
 export default {
@@ -467,7 +610,9 @@ export default {
       savedTags: [],
       recentPomodoros: [],
       isFocusSession: false,
-      selectedTimeframe: 'today'
+      selectedTimeframe: 'today',
+      selectedStatsTimeframe: 'today',
+      stats: null
     };
   },
   computed: {
@@ -481,6 +626,67 @@ export default {
         month: 'Tag usage (this month)'
       };
       return labels[this.selectedTimeframe] || 'Tag usage';
+    },
+    statsLabel() {
+      const labels = {
+        today: 'Today',
+        week: 'This Week',
+        month: 'This Month'
+      };
+      return labels[this.selectedStatsTimeframe] || 'Today';
+    },
+    currentStatsCount() {
+      if (!this.stats) return 0;
+      const counts = {
+        today: this.stats.day,
+        week: this.stats.week,
+        month: this.stats.month
+      };
+      return counts[this.selectedStatsTimeframe] || 0;
+    },
+    statsComparison() {
+      if (!this.stats) return [];
+
+      const comparisons = [];
+
+      if (this.selectedStatsTimeframe === 'today') {
+        // Compare today to daily average
+        const avg = Math.round(this.stats.dayAverage * 10) / 10;
+        if (this.stats.day > avg) {
+          comparisons.push({ text: `Above your daily average (${avg})`, trend: 'up' });
+        } else if (this.stats.day < avg) {
+          comparisons.push({ text: `Below your daily average (${avg})`, trend: 'down' });
+        } else {
+          comparisons.push({ text: `Matches your daily average (${avg})`, trend: 'neutral' });
+        }
+
+        // Compare today to this week
+        if (this.stats.week > this.stats.day) {
+          comparisons.push({ text: `${this.stats.week} this week`, trend: 'neutral' });
+        }
+      } else if (this.selectedStatsTimeframe === 'week') {
+        // Compare this week to weekly average
+        const avg = Math.round(this.stats.weekAverage * 10) / 10;
+        if (this.stats.week > avg) {
+          comparisons.push({ text: `Above your weekly average (${avg})`, trend: 'up' });
+        } else if (this.stats.week < avg) {
+          comparisons.push({ text: `Below your weekly average (${avg})`, trend: 'down' });
+        } else {
+          comparisons.push({ text: `Matches your weekly average (${avg})`, trend: 'neutral' });
+        }
+      } else if (this.selectedStatsTimeframe === 'month') {
+        // Compare this month to monthly average
+        const avg = Math.round(this.stats.monthAverage * 10) / 10;
+        if (this.stats.month > avg) {
+          comparisons.push({ text: `Above your monthly average (${avg})`, trend: 'up' });
+        } else if (this.stats.month < avg) {
+          comparisons.push({ text: `Below your monthly average (${avg})`, trend: 'down' });
+        } else {
+          comparisons.push({ text: `Matches your monthly average (${avg})`, trend: 'neutral' });
+        }
+      }
+
+      return comparisons;
     },
     tagStats() {
       // Calculate tag frequency based on selected timeframe
@@ -540,6 +746,9 @@ export default {
 
     console.log(`[Expire] Page loaded. Phase: ${phase}, isFocusSession: ${this.isFocusSession}`);
 
+    // Load comprehensive stats from HistoryService
+    await this.loadStats();
+
     // Load task and tags from storage if a focus session just completed
     if (this.isFocusSession) {
       await this.loadTaskAndTags();
@@ -562,6 +771,25 @@ export default {
     document.body.removeEventListener('keypress', this.onKeyPress);
   },
   methods: {
+    async loadStats() {
+      try {
+        // Get stats from the beginning of time (timestamp 0)
+        this.stats = await HistoryClient.once.getStats(0);
+        console.log('[Expire] Loaded stats:', this.stats);
+      } catch (error) {
+        console.error('[Expire] Failed to load stats:', error);
+        this.stats = {
+          day: 0,
+          dayAverage: 0,
+          week: 0,
+          weekAverage: 0,
+          month: 0,
+          monthAverage: 0,
+          total: 0
+        };
+      }
+    },
+
     async loadTaskAndTags() {
       return new Promise((resolve) => {
         chrome.storage.local.get(['currentTask', 'savedTags', 'syncQueue'], (result) => {
